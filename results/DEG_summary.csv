@@ -1,9 +1,0 @@
-"comparison","criterion","direction","n_features","n_genes"
-"myb80_vs_WT","FDR=0.05","up",2106,1887
-"myb80_vs_WT","FDR=0.05","down",5291,4669
-"myb80_vs_WT","FDR=0.05 & |log2FC|>1","up",714,689
-"myb80_vs_WT","FDR=0.05 & |log2FC|>1","down",3274,2982
-"tdr_vs_WT","FDR=0.05","up",2522,2296
-"tdr_vs_WT","FDR=0.05","down",6285,5611
-"tdr_vs_WT","FDR=0.05 & |log2FC|>1","up",1035,1001
-"tdr_vs_WT","FDR=0.05 & |log2FC|>1","down",2947,2773
