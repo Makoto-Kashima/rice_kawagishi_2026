@@ -7,10 +7,11 @@
 # when GEO_ACCESSION is set):
 #   OsMYB80_TDR_anther_Salmon_NumReads.txt.gz     Salmon NumReads, transcripts x samples
 #   OsMYB80_TDR_anther_sample_metadata.txt.gz     one row per sample
-# Bundled in data/:
-#   HOT_genes_Fig5.csv                            36 HOT genes shown in Fig. 5
-#   high_temperature_repressed_71genes.csv        71 genes (Endo et al. 2009), optional
-#   GO/                                           GO annotation for enrichment analysis
+# Optional files in data/ (not included before publication; the corresponding
+# steps are skipped without them):
+#   data/GO/                                      GO annotation for enrichment analysis
+#   data/high_temperature_repressed_71genes.csv   71 genes (Endo et al. 2009), column RAP.locus
+#   data/HOT_genes.csv                            HOT gene list for the heat map / GO, column RAP.locus
 # Output: results/
 #
 # Upstream processing (fastp, BWA-MEM, Salmon 1.4.0; RAP-DB IRGSP-1.0
@@ -45,7 +46,7 @@ SCALE_FACTOR    <- 1e6    # NormalizeData(scale.factor = 10^6)
 TCC_ITERATION   <- 3      # calcNormFactors(iteration = 3)
 TCC_FDR         <- 0.05   # estimateDE(FDR = 0.05)
 LOG2FC_CUTOFF   <- 1      # |log2FC| > 1: used for the Fig. 5 overlap (see README)
-RUN_GO          <- TRUE
+RUN_GO          <- dir.exists(file.path(DATA_DIR, "GO"))   # GO step needs data/GO/ (optional)
 
 COUNT_FILE <- "OsMYB80_TDR_anther_Salmon_NumReads.txt.gz"
 META_FILE  <- "OsMYB80_TDR_anther_sample_metadata.txt.gz"
@@ -186,7 +187,9 @@ print(deg_summary)
 # and at two levels: features (transcripts; as in the original lists) and
 # unique RAP loci.
 # -----------------------------------------------------------------------------
-hot <- read.csv(file.path(DATA_DIR, "HOT_genes_Fig5.csv"), stringsAsFactors = FALSE)
+hot_file <- file.path(DATA_DIR, "HOT_genes.csv")
+hot <- if (file.exists(hot_file)) read.csv(hot_file, stringsAsFactors = FALSE) else NULL
+if (is.null(hot)) message("NOTE: ", hot_file, " not found; HOT gene status, heat map and HOT GO are skipped")
 ht71_file <- file.path(DATA_DIR, "high_temperature_repressed_71genes.csv")
 ht71 <- if (file.exists(ht71_file)) read.csv(ht71_file, stringsAsFactors = FALSE)$RAP.locus else NULL
 if (is.null(ht71)) message("NOTE: ", ht71_file, " not found; Venn regions involving the 71 genes = NA")
@@ -225,52 +228,57 @@ for (nm in names(sets)) for (s in names(sets[[nm]])) {
   writeLines(sort(sets[[nm]][[s]]), out("gene_sets", sprintf("%s_%s.txt", s, nm)))
 }
 
-# status of the 36 HOT genes in Fig. 5
-hot_status <- hot[, c("order", "RAP.locus", "Symbol", "cluster_22K_KMC")]
-for (m in MUTANTS) {
-  r <- deg[[m]]$result
-  i <- match(hot_status$RAP.locus, r$feature_id)            # primary transcript feature
-  hot_status[[paste0(m, "_log2FC")]]        <- r$log2FC_mut_vs_WT[i]
-  hot_status[[paste0(m, "_q.value")]]       <- r$q.value[i]
-  hot_status[[paste0(m, "_down_FDR")]]      <- r$estimatedDEG[i] == 1 & r$log2FC_mut_vs_WT[i] < 0
-  hot_status[[paste0(m, "_down_FDR_FC1")]]  <- r$estimatedDEG[i] == 1 & r$log2FC_mut_vs_WT[i] < -LOG2FC_CUTOFF
-  hot_status[[paste0(m, "_down_FDR_FC1_anyTranscript")]] <-
-    hot_status$RAP.locus %in% strip_suffix(down_set(m, LOG2FC_CUTOFF))
+# status of the HOT genes (DEG statistics of each gene)
+if (!is.null(hot)) {
+  hot_status <- hot
+  for (m in MUTANTS) {
+    r <- deg[[m]]$result
+    i <- match(hot_status$RAP.locus, r$feature_id)            # primary transcript feature
+    hot_status[[paste0(m, "_log2FC")]]        <- r$log2FC_mut_vs_WT[i]
+    hot_status[[paste0(m, "_q.value")]]       <- r$q.value[i]
+    hot_status[[paste0(m, "_down_FDR")]]      <- r$estimatedDEG[i] == 1 & r$log2FC_mut_vs_WT[i] < 0
+    hot_status[[paste0(m, "_down_FDR_FC1")]]  <- r$estimatedDEG[i] == 1 & r$log2FC_mut_vs_WT[i] < -LOG2FC_CUTOFF
+    hot_status[[paste0(m, "_down_FDR_FC1_anyTranscript")]] <-
+      hot_status$RAP.locus %in% strip_suffix(down_set(m, LOG2FC_CUTOFF))
+  }
+  hot_status$both_down_FDR_FC1 <- hot_status$myb80_down_FDR_FC1 & hot_status$tdr_down_FDR_FC1
+  hot_status$both_down_FDR_FC1_anyTranscript <-
+    hot_status$myb80_down_FDR_FC1_anyTranscript & hot_status$tdr_down_FDR_FC1_anyTranscript
+  hot_status$in_HT71 <- if (is.null(ht71)) NA else hot_status$RAP.locus %in% ht71
+  write.csv(hot_status, out("HOT_genes_status.csv"), row.names = FALSE)
+  message(sprintf("HOT genes meeting the definition: %d/%d (primary transcript), %d/%d (any transcript)",
+                  sum(hot_status$both_down_FDR_FC1), nrow(hot_status),
+                  sum(hot_status$both_down_FDR_FC1_anyTranscript), nrow(hot_status)))
 }
-hot_status$both_down_FDR_FC1 <- hot_status$myb80_down_FDR_FC1 & hot_status$tdr_down_FDR_FC1
-hot_status$both_down_FDR_FC1_anyTranscript <-
-  hot_status$myb80_down_FDR_FC1_anyTranscript & hot_status$tdr_down_FDR_FC1_anyTranscript
-hot_status$in_HT71 <- if (is.null(ht71)) NA else hot_status$RAP.locus %in% ht71
-write.csv(hot_status, out("HOT_genes_status.csv"), row.names = FALSE)
-message(sprintf("Fig. 5 HOT genes meeting the definition: %d/%d (primary transcript), %d/%d (any transcript)",
-                sum(hot_status$both_down_FDR_FC1), nrow(hot_status),
-                sum(hot_status$both_down_FDR_FC1_anyTranscript), nrow(hot_status)))
 
 if (!is.null(ht71)) {
   s <- sets$FDR_FC1_gene
   hot_recomputed <- sort(intersect(s$both_down, ht71))
-  write.csv(data.frame(RAP.locus = hot_recomputed, in_Fig5_list = hot_recomputed %in% hot$RAP.locus),
+  write.csv(data.frame(RAP.locus = hot_recomputed,
+                       in_HOT_list = if (is.null(hot)) NA else hot_recomputed %in% hot$RAP.locus),
             out("HOT_genes_recomputed.csv"), row.names = FALSE)
   vd <- VennDiagram::venn.diagram(list(osmyb80 = s$myb80_down, tdr = s$tdr_down, `HT-repressed` = ht71),
                                   filename = NULL, disable.logging = TRUE)
   pdf(out("Fig5_venn.pdf")); grid::grid.draw(vd); dev.off()
 }
 
-# heat map (Fig. 5): all samples, HOT genes scaled with ScaleData
-g1 <- DoHeatmap(ScaleData(seurat.myb80.tdr, features = hot$RAP.locus, verbose = FALSE),
-                group.by = "genotype", features = hot$RAP.locus)
-pdf(out("Fig5_heatmap.pdf")); print(g1); dev.off()
+if (!is.null(hot)) {
+  # heat map (Fig. 5): all samples, HOT genes scaled with ScaleData
+  g1 <- DoHeatmap(ScaleData(seurat.myb80.tdr, features = hot$RAP.locus, verbose = FALSE),
+                  group.by = "genotype", features = hot$RAP.locus)
+  pdf(out("Fig5_heatmap.pdf")); print(g1); dev.off()
 
-# alternative present in the original code (not used for Fig. 5):
-# samples with auricle distance in (-2.01, 2.01); ScaleData on default (variable) features
-sub <- subset(seurat.myb80.tdr, subset = auricle_distance > -2.01 & auricle_distance < 2.01)
-sub <- ScaleData(sub, verbose = FALSE)
-n_dropped <- length(setdiff(hot$RAP.locus, rownames(GetAssayData(sub, slot = "scale.data"))))
-g2 <- suppressWarnings(DoHeatmap(sub, group.by = "genotype", features = hot$RAP.locus))
-pdf(out("Fig5_heatmap_auricle_subset_ALTERNATIVE.pdf"))
-print(g2 + labs(caption = sprintf("auricle distance in (-2.01, 2.01): n = %d; HOT genes not scaled: %d",
-                                  ncol(sub), n_dropped)))
-dev.off()
+  # alternative present in the original code (not used for Fig. 5):
+  # samples with auricle distance in (-2.01, 2.01); ScaleData on default (variable) features
+  sub <- subset(seurat.myb80.tdr, subset = auricle_distance > -2.01 & auricle_distance < 2.01)
+  sub <- ScaleData(sub, verbose = FALSE)
+  n_dropped <- length(setdiff(hot$RAP.locus, rownames(GetAssayData(sub, slot = "scale.data"))))
+  g2 <- suppressWarnings(DoHeatmap(sub, group.by = "genotype", features = hot$RAP.locus))
+  pdf(out("Fig5_heatmap_auricle_subset_ALTERNATIVE.pdf"))
+  print(g2 + labs(caption = sprintf("auricle distance in (-2.01, 2.01): n = %d; HOT genes not scaled: %d",
+                                    ncol(sub), n_dropped)))
+  dev.off()
+}
 
 # -----------------------------------------------------------------------------
 # 5. GO enrichment
@@ -312,14 +320,17 @@ if (RUN_GO) {
   term2name <- read.delim(file.path(DATA_DIR, "GO", "godb_BP.txt"), quote = "", stringsAsFactors = FALSE)
 
   go_summary <- rbind(
-    save_go(run_enrichGO(common),        "A_enrichGO_AH96211_common_down"),
-    save_go(run_enrichGO(tdr.specific),  "A_enrichGO_AH96211_tdr_specific_down"),
-    save_go(run_enrichGO(hot$RAP.locus), "B1_enrichGO_AH96211_HOT_genes"),
-    save_go(enricher(gene = hot$RAP.locus, universe = unique(features$gene_id),
-                     TERM2GENE = term2gene, TERM2NAME = term2name,
-                     pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.2,
-                     minGSSize = 10, maxGSSize = 500),
-            "B2_enricher_RAPDB_Oryzabase_HOT_genes"))
+    save_go(run_enrichGO(common),       "A_enrichGO_AH96211_common_down"),
+    save_go(run_enrichGO(tdr.specific), "A_enrichGO_AH96211_tdr_specific_down"))
+  if (!is.null(hot)) {
+    go_summary <- rbind(go_summary,
+      save_go(run_enrichGO(hot$RAP.locus), "B1_enrichGO_AH96211_HOT_genes"),
+      save_go(enricher(gene = hot$RAP.locus, universe = unique(features$gene_id),
+                       TERM2GENE = term2gene, TERM2NAME = term2name,
+                       pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.2,
+                       minGSSize = 10, maxGSSize = 500),
+              "B2_enricher_RAPDB_Oryzabase_HOT_genes"))
+  }
   write.csv(go_summary, out("GO", "GO_summary.csv"), row.names = FALSE)
   print(go_summary)
 }
