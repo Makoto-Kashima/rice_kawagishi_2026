@@ -4,7 +4,7 @@ R code for the anther RNA-seq analysis of wild-type, *osmyb80* and *tdr* rice (*
 
 > **[Authors] ([Year]) [Title]. [Journal]. [DOI]**
 
-It reproduces the differential expression analysis, the **HOT (high temperature–OsMYB80–TDR) genes**, and the Fig. 5 heat map. The whole analysis is in a single script, `OsMYB80_TDR_RNAseq_analysis.R`. Its input is the count matrix and sample metadata deposited in GEO (**[GSExxxxxx]**).
+ The whole analysis is in a single script, `OsMYB80_TDR_RNAseq_analysis.R`. Its input is the count matrix and sample metadata deposited in GEO (**[GSExxxxxx]**).
 
 ## Repository contents
 
@@ -52,16 +52,6 @@ The published results were produced with **R 4.1 / Bioconductor 3.14**:
 
 **Use these versions.** With newer edgeR (≥ 4.x, which TCC calls internally) the numbers of DEGs change.
 
-A reproducible way to get them is the Bioconductor 3.14 container:
-
-```bash
-singularity pull bioc_3.14.sif docker://bioconductor/bioconductor_docker:RELEASE_3_14   # or docker pull
-singularity exec --cleanenv --env R_LIBS_USER=$HOME/R/bioc3.14 bioc_3.14.sif R -e '
-  dir.create(Sys.getenv("R_LIBS_USER"), recursive = TRUE)
-  options(repos = c(CRAN = "https://packagemanager.posit.co/cran/__linux__/focal/2022-09-29"))
-  BiocManager::install(c("TCC", "Seurat", "clusterProfiler", "AnnotationHub", "VennDiagram", "patchwork"),
-                       lib = Sys.getenv("R_LIBS_USER"), update = FALSE, ask = FALSE,
-                       site_repository = getOption("repos")[["CRAN"]])'
 ```
 
 ## Usage
