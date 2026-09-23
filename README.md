@@ -129,4 +129,4 @@ It is restricted to BP terms using GO.db. `godb_BP.txt` gives the term names. `r
 
 ## License
 
-[to be decided, e.g. MIT]
+MIT
